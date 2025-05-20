@@ -2,8 +2,8 @@
 % Parameters
 % --------------------------
 N = 600;            % Grid size
-Nsteps = 90000;     % Total time steps
-Nplot = 100;       % Plot every Nplot steps
+Nsteps = 10000;     % Total time steps
+Nplot = 1000;       % Plot every Nplot steps
 
 % PDE coefficients
 k = 1;
