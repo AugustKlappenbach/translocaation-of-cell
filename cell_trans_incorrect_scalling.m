@@ -34,7 +34,7 @@ kernel =[1 4 1; 4 -20 4; 1 4 1] / 6;
 
 % Smooth tanh initial phase field (soft cell):
 %cell starting point
-cy_cell = round(.3 * Ny);
+cy_cell = round(.2 * Ny);
 cx_cell = round(Nx/2);
 
 radius = 6.52;                  
@@ -78,11 +78,11 @@ psi_right = 0.5 * (1 - tanh((r_right - pillar_radius) / wall_thickness));
 psi = psi_left + psi_right;
 psi(psi > 1) = 1;  % clip to avoid values > 1
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-g= @(phi) phi.^3*(10 + 3*phi.*(2*phi-5));
+ volumes=zeros(1, nSteps-1);
+g= @(phi) phi.^3.*(10 + 3*phi.*(2*phi-5));
 g_prime = @(phi) phi.^3.*(6*phi+3*(-5+2*phi))+3*phi.^2.*(10+3*phi.*(-5+2*phi));
 f = @(phi) 18*phi.^2.*(1- phi).^2;
-f_prime = @(phi) 36*(1 - phi).^2.*phi - 36*(1 - phi).*phi.^2;
+f_prime = @(phi) 8*(1 - phi).^2.*phi - 8*(1 - phi).*phi.^2;
 
 %Plotting initial cell.
 fig = figure('Visible', 'on');
@@ -95,7 +95,7 @@ figure;
 
 for step = 1:nSteps
     % ---------- forces -------------
-    [dphix, dphiy] = my_gradient(phi, dx, dy);
+    volumes(step)=sum(g(phi(:)));
     lap_phi   = laplacian9(phi,dx,dy);
     lap_psi   = laplacian9(psi,dx,dy);
     
@@ -137,12 +137,8 @@ for step = 1:nSteps
     dphi_dt = F - p*h*g_prime(phi);
     phi     = phi + dt*dphi_dt;
     phi(phi>1)=1;  phi(phi<0)=0;                       % clip after update
-        
-        phi = phi + dt*dphi_dt;
-        phi(phi > 1) = 1;
-
-
-    
+       
+  
 if max(abs(F(:))) > 1e3
     disp("Max F:" + max(abs(F(:))))
     disp("time step:"+step)
@@ -152,6 +148,10 @@ end
  % -- updating gif ----------------------------
 if mod(step, save_interval) == 0 || step == 2
     both = phi + psi;
+    V0 = volumes(1);  % or mean(volumes) if that makes more sense
+            vol_range = max(volumes(1:step)) - min(volumes(1:step));
+            percent_variation = 100 * vol_range / V0;
+            disp(['% volume variation: ', num2str(percent_variation, '%.10f'), '%'])
     %Plotting initial cell.
     fig = figure('Visible', 'on');
     tiledlayout(1,2, 'Padding', 'compact', 'TileSpacing', 'compact');
