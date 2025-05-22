@@ -1,0 +1,9 @@
+{
+  "editor.guides.indentation": true,
+  "editor.bracketPairColorization.enabled": true,
+  "editor.guides.bracketPairs": "active", // can also be true, "active", or false
+  "workbench.colorCustomizations": {
+    "editorIndentGuide.activeBackground1": "#ff69b4", // hot pink active guide if you wanna be extra
+  }
+}
+

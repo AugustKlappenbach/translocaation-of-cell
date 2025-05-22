@@ -27,11 +27,11 @@ laplacian = @(A) (circshift(A, [1 0]) + circshift(A, [-1 0]) + ...
 % --------------------------
 % Initial conditions
 % --------------------------
-phi = zeros(N);
+phi = zeros(N); %#ok<PREALL>
 phidot = zeros(N);
-psi = zeros(N);
-psi_left = zeros(N);
-psi_right = zeros(N);
+psi = zeros(N); %#ok<PREALL>
+psi_left = zeros(N); %#ok<PREALL>
+psi_right = zeros(N); %#ok<PREALL>
 psi_left_dot = zeros(N);
 psi_right_dot = zeros(N);
 
@@ -64,7 +64,7 @@ colorbar; title('Initial Condition: φ + ψ');
 frames = {};
 
 for step_count = 1:Nsteps
-    % Calculate p (numerator and denominator)
+     % Calculate p (numerator and denominator)
     lap_phi = laplacian(phi);
     gp_phi = gprime(phi);
     psi_total = psi_left + psi_right;
@@ -102,7 +102,7 @@ for step_count = 1:Nsteps
 
         % Capture frame
         frame = getframe(fig);
-        frames{end+1} = frame.cdata;
+        frames{end+1} = frame.cdata; %#ok<SAGROW>
         close(fig);
     end
 end

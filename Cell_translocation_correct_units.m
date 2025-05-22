@@ -184,11 +184,4 @@ function pog(gap_size_um,force)
     
     
     end
-
-    function [xCOM, yCOM] = compute_center_of_mass(phi)
-    [X, Y] = meshgrid(1:size(phi,2), 1:size(phi,1));
-    total = sum(phi(:));
-    xCOM = sum(sum(X .* phi)) / total;
-    yCOM = sum(sum(Y .* phi)) / total;
-    end
 end
