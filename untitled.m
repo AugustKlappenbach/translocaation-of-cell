@@ -1,13 +1,12 @@
 plotting = false;
-gap_sizes_um=[5,15,3]; 
-forces = [.2,.3,.6];
+gap_sizes_um=[5]; 
+forces = [2.1];
 for i= 1:length(gap_sizes_um)
     for j = 1:length(forces)
         pog(gap_sizes_um(i),forces(j))
     end
 end
 function pog(gap_size_um,force)
-reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
 %% ----------------  Paper PHYSICAL INPUT  ---------------- %%
     phys.W_nm       = 200;        % nm corresponding to PF‑unit 1
     phys.Rpillar_um = 13.5;       % [µm]
@@ -17,12 +16,12 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
     %% -----------------Paper -> Unitless! --------------------------------- %%
     dx     = 0.4;  dy = dx;     % dx/W = 0.4
     dt     = 1e-3;                % tune if stable
-    nSteps = 600/dt;
-    save_interval = round(.2/ dt);
+    nSteps = 1/dt;
+    save_interval = round(.01/ dt);
     R_pillar = phys.Rpillar_um * conv; % 67.5
     R_cell   = phys.Rcell_um * conv;   % 50 PF‑units
     gap_size = gap_size_um*conv;
-    lambda=2;
+    lambda=-2*16;
     v=force;
     x_change=4;
     %% --- domain size --- %%
@@ -35,10 +34,9 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
     x  = (0:Nx-1)*dx;
     y  = (0:Ny-1)*dy;
     [X,Y] = meshgrid(x,y);
-
     %saving
     gifFile = fullfile(getenv('HOME'), 'gifs', ...
-        sprintf('trans_gap%d_%d.gif', gap_size,v));
+        sprintf('trans_gap%d_%d.gif', gap_size_um,v));
     save_dir = fullfile(getenv('HOME'), 'bleb_data');
     if ~exist(save_dir, 'dir')
         mkdir(save_dir);
@@ -51,7 +49,7 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
     cx_cell = round(.5*Nx);
     %soft cell:
     r= sqrt((X-x(cx_cell)).^2 + (Y-y(cy_cell)).^2);
-    phi = 0.5 * (1 - tanh((r - R_cell)/1));
+    phi = 0.5 * (1 - tanh((r - R_cell)/sqrt(2)));
    
     %% Pillars:
     % Distance fields from each center
@@ -67,18 +65,12 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
     r_right = sqrt((X - x_right).^2 + (Y - y_center).^2);
     
     % Smooth tanh profiles for each pillar
-    psi_left  = 0.5 * (1 - tanh((r_left  - R_pillar) / 1));
-    psi_right = 0.5 * (1 - tanh((r_right - R_pillar) / 1));
+    psi_left  = 0.5 * (1 - tanh((r_left  - R_pillar) / sqrt(2)));
+    psi_right = 0.5 * (1 - tanh((r_right - R_pillar) / sqrt(2)));
     
     % Combine into psi field
     psi = psi_left + psi_right;
     both= psi + phi;
-    % phi=gpuArray(phi);
-    % psi=gpuArray(psi);
-    % Y=gpuArray(Y);
-    % X=gpuArray(X);
-    % x=gpuArray(x);
-    % y=gpuArray(y);
 %% ------------------ PDE functions ------------------ %%
     g= @(phi) phi.^3.*(10 + 3*phi.*(2*phi-5));
     g_prime = @(phi) phi.^3.*(6*phi+3*(-5+2*phi))+3*phi.^2.*(10+3*phi.*(-5+2*phi));
@@ -105,17 +97,17 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
         
         g_prime_phi=g_prime(phi);
         % ---------- forces -------------
-        lap_phi   = 4*del2(phi,dx,dy)/(dx*dy);
-        lap_psi   = 4*del2(psi,dx,dy)/(dx*dy);
+        lap_phi   = 4*del2(phi,dx,dy);
+        lap_psi   = 4*del2(psi,dx,dy);
     
-        tension      = 2*lap_phi - f_prime(phi);   
-        interaction  = -lambda*lap_psi;
+        tension      = 2*16*lap_phi - 16*f_prime(phi);   
+        interaction  = lambda*lap_psi;
         % Apply mask in x-direction near the center
         % Find lowest y-position with phi > threshold
        threshold = 0.5; % or whatever works for your cell's body
         phi_mask = phi > threshold;
         y_indices = find(any(phi_mask, 2));  % rows where phi > threshold
-        if ~isempty(y_indices)
+        if ~isempty(y_indices) 
             bottom_idx = max(y_indices);
             y_bottom = y(bottom_idx);
             
@@ -129,62 +121,34 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
         end
     
         % Only apply frontal force where dphix is positive (elementwise)
-        front = v * mu .* g_prime(phi);
+        front = v * mu .* g_prime_phi;
         
         F = tension + interaction + front;               
         % volume projection
-        numerator   = sum(g_prime(phi).*F,'all');
-        denominator = sum(g_prime(phi).^2,'all');
+        numerator   = sum(g_prime_phi.*F,'all');
+        denominator = sum(g_prime_phi.^2,'all');
         p = numerator / (denominator);
         
-        dphi_dt = F - p*g_prime(phi);
+        dphi_dt = F - p*g_prime_phi;
         phi     = phi + dt*dphi_dt;  
         y_coms_old=y_coms;
         y_coms = sum(Y(phi_mask)) / sum(phi_mask(:));
         velocities(step) =  y_coms_old + y_coms*dt;
 %% -- updating gif ----------------------------
          if mod(step, save_interval) == 0 || step == 2
-            % fprintf('step %d | max phi: %.2f | max lap_phi: %.2f | max gprime: %.2f | max F: %.2f\n', ...
-            % step, max(phi(:)), max(lap_phi(:)), max(g_prime_phi(:)), max(F(:)));
-            both = phi + psi;
-            %Plotting initial cell.
-            % subplot(1,3,1); imagesc(g_prime_phi); title("g'(\phi)");
-            % subplot(1,3,2); imagesc(mu); title("μ band");
-            % subplot(1,3,3); imagesc(mu .* g_prime_phi); title("μ × g'");
-
-            fig = figure('Visible', 'on');
-            tiledlayout(1,2, 'Padding', 'compact', 'TileSpacing', 'compact');
-
-            %-- Plot φ --
-            nexttile;
-            imagesc(both, [0 1]); axis equal tight;
-            colormap(spring); colorbar;
-            title('\phi (Cell Shape)');
-            nexttile;
-            velocity_plot = plot(NaN, NaN, 'LineWidth', 2); 
-            xlabel('Time (s)'); ylabel('Velocity (\mum/s)');
-            xlim([0, step*dt]);
-            ylim([0, max(velocities)+1]);  % adjust this based on expected velocity range
-            grid on;
-            hold on;
-            set(velocity_plot, 'XData', time_array(2:step), 'YData', velocities(1:step-1));
-            drawnow limitrate;  % prevents lag by throttling redraw frequency 
-
-            % ► GIF: grab frame and append
-            drawnow;
-            frame = getframe(fig);
-            [im, map] = rgb2ind(frame.cdata, 256);
-
-            if step == 2                            % first time → create file
-                imwrite(im, map, gifFile, 'gif', ...
-                    'LoopCount', inf, 'DelayTime', 0);  % DelayTime ~ seconds per frame
-            else                                    % later → append
-                imwrite(im, map, gifFile, 'gif', ...
-                    'WriteMode', 'append', 'DelayTime', 0);
+            if mod(step, save_interval) == 0 || step == 2
+                % save phi or velocity for later plotting
+                out_phi(:,:,step) = gather(phi);
+                out_psi(:,:,step) = gather(psi);
+                out_velocity(step) = gather(velocities(step));
             end
+
         end
        
     
     
     end
+    save(fullfile(save_dir, sprintf('simdata_gap%d_force%d.mat', gap_size_um, force)), ...
+    'out_phi', 'out_psi', 'out_velocity', 'time_array');
+
 end

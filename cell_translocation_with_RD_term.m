@@ -1,13 +1,11 @@
-plotting = false;
-gap_sizes_um=[5,15,3]; 
-forces = [.2,.3,.6];
+gap_sizes_um=[11]; 
+forces = [.3];
 for i= 1:length(gap_sizes_um)
     for j = 1:length(forces)
         pog(gap_sizes_um(i),forces(j))
     end
 end
 function pog(gap_size_um,force)
-reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
 %% ----------------  Paper PHYSICAL INPUT  ---------------- %%
     phys.W_nm       = 200;        % nm corresponding to PF‑unit 1
     phys.Rpillar_um = 13.5;       % [µm]
@@ -17,7 +15,7 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
     %% -----------------Paper -> Unitless! --------------------------------- %%
     dx     = 0.4;  dy = dx;     % dx/W = 0.4
     dt     = 1e-3;                % tune if stable
-    nSteps = 600/dt;
+    nSteps = 2/dt;
     save_interval = round(.2/ dt);
     R_pillar = phys.Rpillar_um * conv; % 67.5
     R_cell   = phys.Rcell_um * conv;   % 50 PF‑units
@@ -187,4 +185,5 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
     
     
     end
+    
 end
