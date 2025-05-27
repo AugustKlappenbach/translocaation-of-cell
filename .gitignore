@@ -4,7 +4,8 @@
 *.autosave
 *.slx.r*
 *.mdl.r*
-
+*.gif
+*.mat
 # Derived content-obscured files
 *.p
 
