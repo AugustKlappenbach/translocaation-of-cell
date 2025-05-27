@@ -6,6 +6,7 @@
 *.mdl.r*
 *.gif
 *.mat
+*.json
 # Derived content-obscured files
 *.p
 

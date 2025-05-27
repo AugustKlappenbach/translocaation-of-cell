@@ -1,11 +1,13 @@
-gap_sizes_um=[11]; 
-forces = [.3];
+plotting = false;
+gap_sizes_um=[5,15,3]; 
+forces = [.2,.3,.6];
 for i= 1:length(gap_sizes_um)
     for j = 1:length(forces)
         pog(gap_sizes_um(i),forces(j))
     end
 end
 function pog(gap_size_um,force)
+reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
 %% ----------------  Paper PHYSICAL INPUT  ---------------- %%
     phys.W_nm       = 200;        % nm corresponding to PF‑unit 1
     phys.Rpillar_um = 13.5;       % [µm]
@@ -15,14 +17,13 @@ function pog(gap_size_um,force)
     %% -----------------Paper -> Unitless! --------------------------------- %%
     dx     = 0.4;  dy = dx;     % dx/W = 0.4
     dt     = 1e-3;                % tune if stable
-    nSteps = 2/dt;
+    nSteps = 600/dt;
     save_interval = round(.2/ dt);
     R_pillar = phys.Rpillar_um * conv; % 67.5
     R_cell   = phys.Rcell_um * conv;   % 50 PF‑units
     gap_size = gap_size_um*conv;
     lambda=2;
     v=force;
-    x_change=4;
     %% --- domain size --- %%
     Lx = 3*(R_cell);   
     Ly = 9*R_cell;  
@@ -41,7 +42,6 @@ function pog(gap_size_um,force)
     if ~exist(save_dir, 'dir')
         mkdir(save_dir);
     end
-    save_path = fullfile(save_dir, 'velocity_data.mat');
 
     %% Cell init:
     %Where we starting at?
@@ -82,15 +82,10 @@ function pog(gap_size_um,force)
     g_prime = @(phi) phi.^3.*(6*phi+3*(-5+2*phi))+3*phi.^2.*(10+3*phi.*(-5+2*phi));
     f_prime = @(phi) 8*phi.*(1-phi).*(1-2*phi);
      %functions that will be used:
-     volumes=zeros(1, nSteps-1);
-
-        % Before time loop:
-    velocities = zeros(1, nSteps);
-    coms = zeros(nSteps, 2);
+     %volumes=zeros(1, nSteps-1);
     
     % Cell volume weight
     phi_mask = phi > 0.5; % binary mask
-    time_array = zeros(1,nSteps);
 
     y_coms = sum(Y(phi_mask)) / sum(phi_mask(:));
     velocities = zeros(1, nSteps-1); % store velocity
@@ -108,34 +103,18 @@ function pog(gap_size_um,force)
     
         tension      = 2*lap_phi - f_prime(phi);   
         interaction  = -lambda*lap_psi;
-        % Apply mask in x-direction near the center
-        % Find lowest y-position with phi > threshold
-       threshold = 0.5; % or whatever works for your cell's body
-        phi_mask = phi > threshold;
-        y_indices = find(any(phi_mask, 2));  % rows where phi > threshold
-        if ~isempty(y_indices)
-            bottom_idx = max(y_indices);
-            y_bottom = y(bottom_idx);
-            
-            % Create band mask just above that region
-            y_band = (Y > y_bottom - gap_size*0.5) & (Y < y_bottom + gap_size*0.5);
-            x_band = abs(X - x_center) < gap_size / 2;
-        
-            mu = double(x_band & y_band);
-        else
-            mu = zeros(size(phi));  % fallback if phi is gone
-        end
-    
+       
+
         % Only apply frontal force where dphix is positive (elementwise)
-        front = v * mu .* g_prime(phi);
+        front = v * mu .* g_prime_phi;
         
         F = tension + interaction + front;               
         % volume projection
-        numerator   = sum(g_prime(phi).*F,'all');
-        denominator = sum(g_prime(phi).^2,'all');
+        numerator   = sum(g_prime_phi.*F,'all');
+        denominator = sum(g_prime_phi.^2,'all');
         p = numerator / (denominator);
         
-        dphi_dt = F - p*g_prime(phi);
+        dphi_dt = F - p*g_prime_phi;
         phi     = phi + dt*dphi_dt;  
         y_coms_old=y_coms;
         y_coms = sum(Y(phi_mask)) / sum(phi_mask(:));
@@ -185,5 +164,4 @@ function pog(gap_size_um,force)
     
     
     end
-    
 end

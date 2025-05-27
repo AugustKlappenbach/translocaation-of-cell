@@ -15,11 +15,11 @@ y = linspace(-Ly/2, Ly/2, Ny);
 [X, Y] = meshgrid(x, y);
 
 dt = 1e-3;
-T_final = 1;
+T_final = 2;
 nSteps = round(T_final / dt);
 
-kon = 1/(T_final);
-Df = 2;
+kon = (2/(T_final));
+Df = .002;
 
 %% --- Phase Field φ ---
 R = 3;
@@ -53,7 +53,7 @@ for step = 1:nSteps
     abs_dphidy = abs(dphidy);
     epsilon = 1e-6;
     denom = max(abs_dphidy - dphidy, epsilon)+ epsilon;
-    koff = exp(2 ./ denom);
+    koff = .05*exp(2 ./ denom);
     koff = min(koff, 1e3);  % or some safe max like 1e3
 
 

@@ -16,18 +16,17 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
     W      = 1;  
     %% -----------------Paper -> Unitless! --------------------------------- %%
     dx     = 0.4;  dy = dx;     % dx/W = 0.4
-    dt     = 1e-3;                % tune if stable
-    nSteps = 600/dt;
+    dt     = 1e-3/2;                % tune if stable
+    nSteps = 200/dt;
     save_interval = round(.2/ dt);
     R_pillar = phys.Rpillar_um * conv; % 67.5
     R_cell   = phys.Rcell_um * conv;   % 50 PF‑units
     gap_size = gap_size_um*conv;
     lambda=2;
     v=force;
-    x_change=4;
     %% --- domain size --- %%
     Lx = 3*(R_cell);   
-    Ly = 9*R_cell;  
+    Ly = 7*R_cell;  
     
     Nx = ceil(Lx/dx);
     Ny = ceil(Ly/dy);
@@ -39,15 +38,9 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
     %saving
     gifFile = fullfile(getenv('HOME'), 'gifs', ...
         sprintf('trans_gap%d_%d.gif', gap_size,v));
-    save_dir = fullfile(getenv('HOME'), 'bleb_data');
-    if ~exist(save_dir, 'dir')
-        mkdir(save_dir);
-    end
-    save_path = fullfile(save_dir, 'velocity_data.mat');
-
     %% Cell init:
     %Where we starting at?
-    cy_cell = round(.2*Ny);
+    cy_cell = round(.3*Ny);
     cx_cell = round(.5*Nx);
     %soft cell:
     r= sqrt((X-x(cx_cell)).^2 + (Y-y(cy_cell)).^2);
@@ -73,26 +66,21 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
     % Combine into psi field
     psi = psi_left + psi_right;
     both= psi + phi;
-    % phi=gpuArray(phi);
-    % psi=gpuArray(psi);
-    % Y=gpuArray(Y);
-    % X=gpuArray(X);
-    % x=gpuArray(x);
-    % y=gpuArray(y);
+    phi=gpuArray(phi);
+    psi=gpuArray(psi);
+    Y=gpuArray(Y);
+    X=gpuArray(X);
+    x=gpuArray(x);
+    y=gpuArray(y);
 %% ------------------ PDE functions ------------------ %%
     g= @(phi) phi.^3.*(10 + 3*phi.*(2*phi-5));
     g_prime = @(phi) phi.^3.*(6*phi+3*(-5+2*phi))+3*phi.^2.*(10+3*phi.*(-5+2*phi));
     f_prime = @(phi) 8*phi.*(1-phi).*(1-2*phi);
      %functions that will be used:
-     volumes=zeros(1, nSteps-1);
-
-        % Before time loop:
-    velocities = zeros(1, nSteps);
-    coms = zeros(nSteps, 2);
+     %volumes=zeros(1, nSteps-1);
     
     % Cell volume weight
     phi_mask = phi > 0.5; % binary mask
-    time_array = zeros(1,nSteps);
 
     y_coms = sum(Y(phi_mask)) / sum(phi_mask(:));
     velocities = zeros(1, nSteps-1); % store velocity
@@ -129,15 +117,15 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
         end
     
         % Only apply frontal force where dphix is positive (elementwise)
-        front = v * mu .* g_prime(phi);
+        front = v * mu .* g_prime_phi;
         
         F = tension + interaction + front;               
         % volume projection
-        numerator   = sum(g_prime(phi).*F,'all');
-        denominator = sum(g_prime(phi).^2,'all');
+        numerator   = sum(g_prime_phi.*F,'all');
+        denominator = sum(g_prime_phi.^2,'all');
         p = numerator / (denominator);
         
-        dphi_dt = F - p*g_prime(phi);
+        dphi_dt = F - p*g_prime_phi;
         phi     = phi + dt*dphi_dt;  
         y_coms_old=y_coms;
         y_coms = sum(Y(phi_mask)) / sum(phi_mask(:));
