@@ -76,8 +76,8 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
     g= @(phi) phi.^3.*(10 + 3*phi.*(2*phi-5));
     g_prime = @(phi) phi.^3.*(6*phi+3*(-5+2*phi))+3*phi.^2.*(10+3*phi.*(-5+2*phi));
     f_prime = @(phi) 8*phi.*(1-phi).*(1-2*phi);
-     %functions that will be used:
-     %volumes=zeros(1, nSteps-1);
+    %functions that will be used:
+    %volumes=zeros(1, nSteps-1);
     
     % Cell volume weight
     phi_mask = phi > 0.5; % binary mask

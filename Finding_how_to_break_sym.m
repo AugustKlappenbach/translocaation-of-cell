@@ -27,7 +27,7 @@ r = sqrt(X.^2 + Y.^2);
 phi = 0.5 * (1 - tanh((r - R) / .2));  % tanh transition around radius R
 
 %% --- Initial Conditions for cf and cb ---
-wphi = 18 .* phi.^2 .* (1 - phi).^2;
+wphi = phi .* (1 - phi);
 cf = 1 *wphi;  % small random initial free concentration
 cb = zeros(Ny, Nx);       % bound initially zero
 save_rate = 50;  % save every 50 steps

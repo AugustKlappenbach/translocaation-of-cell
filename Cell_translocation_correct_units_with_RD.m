@@ -7,7 +7,7 @@ for i= 1:length(gap_sizes_um)
     end
 end
 function pog(gap_size_um,force)
-reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
+%reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
 %% ----------------  Paper PHYSICAL INPUT  ---------------- %%
     phys.W_nm       = 200;        % nm corresponding to PF‑unit 1
     phys.Rpillar_um = 13.5;       % [µm]
@@ -36,7 +36,7 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
     [X,Y] = meshgrid(x,y);
 
     %saving
-    gifFile = fullfile(getenv('HOME'), 'gifs', ...
+    gifFile = fullfile(getenv('HOME'), 'gifs2', ...
         sprintf('trans_gap%d_%d.gif', gap_size,v));
     save_dir = fullfile(getenv('HOME'), 'bleb_data');
     if ~exist(save_dir, 'dir')
@@ -73,16 +73,17 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
     both= psi + phi;
     % phi=gpuArray(phi);
     % psi=gpuArray(psi);
-    % Y=gpuArray(Y);
+    %Y=gpuArray(Y);
     % X=gpuArray(X);
     % x=gpuArray(x);
     % y=gpuArray(y);
 %% ------------------ PDE functions ------------------ %%
-    g= @(phi) phi.^3.*(10 + 3*phi.*(2*phi-5));
+    g = @(phi) phi.^3.*(10 + 3*phi.*(2*phi-5));
     g_prime = @(phi) phi.^3.*(6*phi+3*(-5+2*phi))+3*phi.^2.*(10+3*phi.*(-5+2*phi));
     f_prime = @(phi) 8*phi.*(1-phi).*(1-2*phi);
-     %functions that will be used:
-     %volumes=zeros(1, nSteps-1);
+    w = @(phi) 4*phi.*(1-phi); 
+    %functions that will be used:
+    %volumes=zeros(1, nSteps-1);
     
     % Cell volume weight
     phi_mask = phi > 0.5; % binary mask
@@ -90,25 +91,63 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
     y_coms = sum(Y(phi_mask)) / sum(phi_mask(:));
     velocities = zeros(1, nSteps-1); % store velocity
     time_array = (0:nSteps-1) * dt;
+%% ------------------- field for k_on ------------------ %%
+    x_center = max(x) / 2;  % or x(end)/2
+    gap_size = round(gap_size/dx)*dx;
 
-%% ------------------- Main loop ------------------ %%
+    x_left = x_center - gap_size/2;
+    x_right = x_center + gap_size/2;
+
+    my_field = zeros(size(X));
+  % Left half of gap: 1 → 2
+    left_mask = (X >= x_left) & (X <= x_center);
+    my_field(left_mask) = 2 - (X(left_mask) - x_left) / (gap_size/2);
+    % Right half of gap: 2 → 1
+    right_mask = (X > x_center) & (X <= x_right);
+    my_field(right_mask) = 1 + (X(right_mask) - x_center) / (gap_size/2);
+    Df = 7;
+    kon = .2;
+    k_off = .2;
+    %% --- Initial Conditions for cf and cb ---
+    wphi = w(phi);
+    cf = .5*wphi;  % small random initial free concentration
+    cb = .5*wphi;  % bound initially
+   %% ------------------- Main loop ------------------ %%
     % Loop over time steps
     for step = 1:nSteps
         % Inside time loop (at each step)
-        
+        w_phi = w(phi);
         g_prime_phi=g_prime(phi);
         % ---------- forces -------------
         lap_phi   = 4*del2(phi,dx,dy)/(dx*dy);
         lap_psi   = 4*del2(psi,dx,dy)/(dx*dy);
-    
+        [dphix, dphidy] = my_gradient(phi, dx, dy);
+        mask_front =  (dphidy <  0);
+        front_of_cell= zeros(Ny, Nx);
+        front_of_cell(mask_front) = 4*w(phi(mask_front));
+        if y_coms < 0.5*Ny && any(phi(:).*psi(:) ~= 0)
+            koff = my_field .* front_of_cell; % k_on
+        else
+            koff = k_off .* w_phi; % k_off
+        end
+        
+        % --- Gradient and diffusion ---
+        [cf_x, cf_y] = gradient(cf, dx, dy);
+        div_diff_cf = divergence(wphi .* cf_x, wphi .* cf_y);
+
+        % --- Reaction terms ---
+        react_cf = -(-wphi .* kon .* cf + koff .* cb);
+        react_cb = -(wphi .*  kon .* cf - koff .* cb);
+
+        % --- Time update ---
+        cf = cf + dt * (Df * div_diff_cf + react_cf);
+        cb = cb + dt * react_cb;
+
+        pulling_force = front_of_cell.*my_field.*cb;
         tension      = 2*lap_phi - f_prime(phi);   
         interaction  = -lambda*lap_psi;
-       
-
-        % Only apply frontal force where dphix is positive (elementwise)
-        front = v * mu .* g_prime_phi;
         
-        F = tension + interaction + front;               
+        F = tension + interaction + pulling_force;               
         % volume projection
         numerator   = sum(g_prime_phi.*F,'all');
         denominator = sum(g_prime_phi.^2,'all');
@@ -130,7 +169,7 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
             % subplot(1,3,3); imagesc(mu .* g_prime_phi); title("μ × g'");
 
             fig = figure('Visible', 'on');
-            tiledlayout(1,2, 'Padding', 'compact', 'TileSpacing', 'compact');
+            tiledlayout(2,3, 'Padding', 'compact', 'TileSpacing', 'compact');
 
             %-- Plot φ --
             nexttile;
@@ -138,14 +177,25 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
             colormap(spring); colorbar;
             title('\phi (Cell Shape)');
             nexttile;
-            velocity_plot = plot(NaN, NaN, 'LineWidth', 2); 
-            xlabel('Time (s)'); ylabel('Velocity (\mum/s)');
-            xlim([0, step*dt]);
-            ylim([0, max(velocities)+1]);  % adjust this based on expected velocity range
-            grid on;
-            hold on;
-            set(velocity_plot, 'XData', time_array(2:step), 'YData', velocities(1:step-1));
-            drawnow limitrate;  % prevents lag by throttling redraw frequency 
+            imagesc(cb, [min(cb(:)) max(cb(:))]);
+            colorbar; axis equal tight;
+            title('c_b (Bound Concentration)');
+            nexttile;
+            imagesc(cf, [min(cf(:)) max(cf(:))]);
+            colorbar; axis equal tight;
+            title('c_f (Free Concentration)');
+            nexttile; 
+            imagesc(wphi.*cb, [min(wphi(:).*cb(:)) max(wphi(:).*cb(:))]);
+            colorbar; axis equal tight;
+            title('wphi*c_b (Free Concentration)');
+            nexttile;
+            imagesc(pulling_force, [min(pulling_force(:)) max(pulling_force(:))]);
+            colorbar; axis equal tight; 
+            title('Pulling Force');
+            nexttile;
+            imagesc(wphi, [min(wphi(:)) max(wphi(:))]);
+            colorbar; axis equal tight;
+            title('w(\phi) (Cell Volume Weight)');
 
             % ► GIF: grab frame and append
             drawnow;
@@ -160,8 +210,5 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
                     'WriteMode', 'append', 'DelayTime', 0);
             end
         end
-       
-    
-    
     end
 end
