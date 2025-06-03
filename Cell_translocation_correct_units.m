@@ -1,6 +1,6 @@
 plotting = false;
-gap_sizes_um=[5,15,3]; 
-forces = [.2,.3,.6];
+gap_sizes_um=[5,3]; 
+forces = [.1,.09,.16];
 for i= 1:length(gap_sizes_um)
     for j = 1:length(forces)
         pog(gap_sizes_um(i),forces(j))
@@ -17,7 +17,7 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
     %% -----------------Paper -> Unitless! --------------------------------- %%
     dx     = 0.4;  dy = dx;     % dx/W = 0.4
     dt     = 1e-3/2;                % tune if stable
-    nSteps = 200/dt;
+    nSteps = 800/dt;
     save_interval = round(.2/ dt);
     R_pillar = phys.Rpillar_um * conv; % 67.5
     R_cell   = phys.Rcell_um * conv;   % 50 PF‑units
@@ -40,7 +40,7 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
         sprintf('trans_gap%d_%d.gif', gap_size,v));
     %% Cell init:
     %Where we starting at?
-    cy_cell = round(.3*Ny);
+    cy_cell = round(.22*Ny);
     cx_cell = round(.5*Nx);
     %soft cell:
     r= sqrt((X-x(cx_cell)).^2 + (Y-y(cy_cell)).^2);
@@ -66,6 +66,7 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
     % Combine into psi field
     psi = psi_left + psi_right;
     both= psi + phi;
+    both = gpuArray(both);
     phi=gpuArray(phi);
     psi=gpuArray(psi);
     Y=gpuArray(Y);
@@ -140,7 +141,7 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
             % subplot(1,3,2); imagesc(mu); title("μ band");
             % subplot(1,3,3); imagesc(mu .* g_prime_phi); title("μ × g'");
 
-            fig = figure('Visible', 'on');
+            fig = figure('Visible', 'off');
             tiledlayout(1,2, 'Padding', 'compact', 'TileSpacing', 'compact');
 
             %-- Plot φ --
