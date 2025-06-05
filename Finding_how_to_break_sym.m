@@ -30,7 +30,7 @@ phi = 0.5 * (1 - tanh((r - R) / .2));  % tanh transition around radius R
 wphi = phi .* (1 - phi);
 cf = 1 *wphi;  % small random initial free concentration
 cb = zeros(Ny, Nx);       % bound initially zero
-save_rate = 50;  % save every 50 steps
+save_rate =round(dt);  % save every 50 steps
 Nsamp = floor(nSteps/save_rate);
 cf_tot = zeros(1, Nsamp, 'double');
 cb_tot = zeros(1, Nsamp, 'double');
@@ -68,6 +68,8 @@ for step = 1:nSteps
     % --- Time update ---
     cf = cf + dt * (Df * div_diff_cf + react_cf);
     cb = cb + dt * react_cb;
+    sums_cf(step) = sum(cf(:));
+    sums_cb(step) = sum(cb(:));
     % --- Plot every 50 steps ---
     if mod(step, save_rate) == 0 || step == 1
         sample_idx = sample_idx + 1;
