@@ -1,28 +1,28 @@
 plotting = false;
 gap_sizes_um=[5,3]; 
-forces = [.1,.09,.16];
+forces = [.09,.08,.07];
 for i= 1:length(gap_sizes_um)
     for j = 1:length(forces)
         pog(gap_sizes_um(i),forces(j))
     end
 end
 function pog(gap_size_um,force)
-reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
+    %reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
 %% ----------------  Paper PHYSICAL INPUT  ---------------- %%
     phys.W_nm       = 200;        % nm corresponding to PF‑unit 1
     phys.Rpillar_um = 13.5;       % [µm]
     phys.Rcell_um   = 10;         % [µm]
     conv   = 1000/phys.W_nm;      % nm ➜ PF units (==5)
-    W      = 1;  
+    W      = 1.4;  
     %% -----------------Paper -> Unitless! --------------------------------- %%
-    dx     = 0.4;  dy = dx;     % dx/W = 0.4
-    dt     = 1e-3/2;                % tune if stable
+    dx     = 0.8;  dy = dx;     % dx/W = 0.4
+    dt     = 1e-3;                % tune if stable
     nSteps = 800/dt;
-    save_interval = round(.2/ dt);
+    save_interval = round(.5/ dt);
     R_pillar = phys.Rpillar_um * conv; % 67.5
     R_cell   = phys.Rcell_um * conv;   % 50 PF‑units
     gap_size = gap_size_um*conv;
-    lambda=2;
+    
     v=force;
     %% --- domain size --- %%
     Lx = 3*(R_cell);   
@@ -44,8 +44,7 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
     cx_cell = round(.5*Nx);
     %soft cell:
     r= sqrt((X-x(cx_cell)).^2 + (Y-y(cy_cell)).^2);
-    phi = 0.5 * (1 - tanh((r - R_cell)/1));
-   
+    phi = 0.5 * (1 - tanh((r - R_cell)/W));
     %% Pillars:
     % Distance fields from each center
     centerx = round(Nx/2);
@@ -60,19 +59,19 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
     r_right = sqrt((X - x_right).^2 + (Y - y_center).^2);
     
     % Smooth tanh profiles for each pillar
-    psi_left  = 0.5 * (1 - tanh((r_left  - R_pillar) / 1));
-    psi_right = 0.5 * (1 - tanh((r_right - R_pillar) / 1));
+    psi_left  = 0.5 * (1 - tanh((r_left  - R_pillar) / W));
+    psi_right = 0.5 * (1 - tanh((r_right - R_pillar) / W));
     
     % Combine into psi field
     psi = psi_left + psi_right;
     both= psi + phi;
-    both = gpuArray(both);
-    phi=gpuArray(phi);
-    psi=gpuArray(psi);
-    Y=gpuArray(Y);
-    X=gpuArray(X);
-    x=gpuArray(x);
-    y=gpuArray(y);
+    % both = gpuArray(both);
+    % phi=gpuArray(phi);
+    % psi=gpuArray(psi);
+    % Y=gpuArray(Y);
+    % X=gpuArray(X);
+    % x=gpuArray(x);
+    % y=gpuArray(y);
 %% ------------------ PDE functions ------------------ %%
     g= @(phi) phi.^3.*(10 + 3*phi.*(2*phi-5));
     g_prime = @(phi) phi.^3.*(6*phi+3*(-5+2*phi))+3*phi.^2.*(10+3*phi.*(-5+2*phi));
@@ -81,12 +80,14 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
     %volumes=zeros(1, nSteps-1);
     
     % Cell volume weight
+    
     phi_mask = phi > 0.5; % binary mask
 
     y_coms = sum(Y(phi_mask)) / sum(phi_mask(:));
     velocities = zeros(1, nSteps-1); % store velocity
     time_array = (0:nSteps-1) * dt;
-
+%% ------------------ getting repulsion force constant \lambda ------------------ %%
+    lambda=-(15/4) * W * v;
 %% ------------------- Main loop ------------------ %%
     % Loop over time steps
     for step = 1:nSteps
@@ -101,7 +102,7 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
         interaction  = -lambda*lap_psi;
         % Apply mask in x-direction near the center
         % Find lowest y-position with phi > threshold
-       threshold = 0.5; % or whatever works for your cell's body
+        threshold = 0.5; % or whatever works for your cell's body
         phi_mask = phi > threshold;
         y_indices = find(any(phi_mask, 2));  % rows where phi > threshold
         if ~isempty(y_indices)
@@ -132,7 +133,7 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
         y_coms = sum(Y(phi_mask)) / sum(phi_mask(:));
         velocities(step) =  y_coms_old + y_coms*dt;
 %% -- updating gif ----------------------------
-         if mod(step, save_interval) == 0 || step == 2
+        if mod(step, save_interval) == 0 || step == 2
             % fprintf('step %d | max phi: %.2f | max lap_phi: %.2f | max gprime: %.2f | max F: %.2f\n', ...
             % step, max(phi(:)), max(lap_phi(:)), max(g_prime_phi(:)), max(F(:)));
             both = phi + psi;
@@ -146,8 +147,9 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
 
             %-- Plot φ --
             nexttile;
-            imagesc(both, [0 1]); axis equal tight;
+            imagesc(gather(phi), [0 1]); axis image; axis off; hold on;
             colormap(spring); colorbar;
+            contour(gather(psi), [0.5 0.5], 'k', 'LineWidth', 2);  % Black contour at phi = 0.5
             title('\phi (Cell Shape)');
             nexttile;
             velocity_plot = plot(NaN, NaN, 'LineWidth', 2); 
@@ -164,16 +166,13 @@ reset(gpuDevice); % if you want a full GPU clear (may slow repeated calls)
             frame = getframe(fig);
             [im, map] = rgb2ind(frame.cdata, 256);
 
-            if step == 2                            % first time → create file
-                imwrite(im, map, gifFile, 'gif', ...
-                    'LoopCount', inf, 'DelayTime', 0);  % DelayTime ~ seconds per frame
-            else                                    % later → append
-                imwrite(im, map, gifFile, 'gif', ...
-                    'WriteMode', 'append', 'DelayTime', 0);
-            end
+                if step == 2                            % first time → create file
+                    imwrite(im, map, gifFile, 'gif', ...
+                        'LoopCount', inf, 'DelayTime', 0);  % DelayTime ~ seconds per frame
+                else                                    % later → append
+                    imwrite(im, map, gifFile, 'gif', ...
+                        'WriteMode', 'append', 'DelayTime', 0);
+                end
         end
-       
-    
-    
     end
 end
