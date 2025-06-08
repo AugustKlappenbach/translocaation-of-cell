@@ -7,6 +7,8 @@
 *.gif
 *.mat
 *.json
+*.png
+*.jpg
 # Derived content-obscured files
 *.p
 

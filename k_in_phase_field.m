@@ -94,7 +94,7 @@ init_cb=sum(cb(:))*dx*dy;
 total_c_b = zeros(1, round(nSteps));
 total_c_f = zeros(1, round(nSteps));
 t = zeros(1, round(nSteps));
-
+w_variance = zeros(1, round(nSteps));
 figure(1); clf;
 
         subplot(2,2,1);
@@ -147,10 +147,10 @@ for step = 1:nSteps
     cb = cb + dt *  react_cb;
     cf_no_w= cf./(wphi+1e-6); % avoid division by zero
     cb_no_w= cb./(wphi+1e-6); % avoid division by zero
-    total_c_f(step)= sum(cf_no_w(:))*dx*dy/init_cf;
-    total_c_b(step)= sum(cb_no_w(:))*dx*dy/init_cb;
+    total_c_f(step)= sum(cf_no_w(:))*dx*dy;
+    total_c_b(step)= sum(cb_no_w(:))*dx*dy;
     t(step) = step * dt;
-
+    w_variance(step) = sum(wphi(:)) * dx * dy; % variance of w(phi)
     if mod(step, save_rate) == 0 
         
         idx = step / save_rate;
@@ -182,15 +182,24 @@ for step = 1:nSteps
 
     end
 end
-figure;
-plot(t, total_c_b, 'b', 'DisplayName', 'Total c_b');
+clc;
+figure(2); clf;
+total_cs= total_c_f(1) + total_c_b(1);
+plot(t, total_c_b/total_cs, 'b', 'DisplayName', 'Total c_b');
 hold on;
-plot(t, total_c_f, 'r', 'DisplayName', 'Total c_f');
+plot(t, total_c_f/total_cs, 'r', 'DisplayName', 'Total c_f');
 hold on;
-plot(t, (total_c_f + total_c_b), 'g', 'DisplayName', 'Total c');
+plot(t, (total_c_f + total_c_b)/(total_cs), 'g', 'DisplayName', 'Total c');
 xlabel('Time [s]');
 ylabel('Total Concentration');
 legend;
 title('Total c_b and c_f over time');
 saveas(gcf, 'total_cb_cf_plot.png');
-
+clc;
+figure(3); clf;
+plot(t, w_variance/w_variance(1), 'k', 'DisplayName', 'w variance');
+xlabel('Time [s]');
+ylabel('Variance of w(phi)');
+title('Variance of w(phi) over time');
+saveas(gcf, 'w_variance_plot.png');
+clc;

@@ -1,4 +1,4 @@
-plotting = false;
+plotting = true;
 gap_sizes_um=[5,3]; 
 forces = [.09,.08,.07];
 for i= 1:length(gap_sizes_um)
@@ -11,9 +11,10 @@ function pog(gap_size_um,force)
 %% ----------------  Paper PHYSICAL INPUT  ---------------- %%
     phys.W_nm       = 200;        % nm corresponding to PF‑unit 1
     phys.Rpillar_um = 13.5;       % [µm]
-    phys.Rcell_um   = 10;         % [µm]
+    phys.Rcell_um   = 6.5;         % [µm]
     conv   = 1000/phys.W_nm;      % nm ➜ PF units (==5)
     W      = 1.4;  
+    start_point_offset_um=13;
     %% -----------------Paper -> Unitless! --------------------------------- %%
     dx     = 0.8;  dy = dx;     % dx/W = 0.4
     dt     = 1e-3;                % tune if stable
@@ -22,11 +23,11 @@ function pog(gap_size_um,force)
     R_pillar = phys.Rpillar_um * conv; % 67.5
     R_cell   = phys.Rcell_um * conv;   % 50 PF‑units
     gap_size = gap_size_um*conv;
-    
+    start_point_offset= start_point_offset_um * conv; % offset from center in PF units
     v=force;
     %% --- domain size --- %%
-    Lx = 3*(R_cell);   
-    Ly = 7*R_cell;  
+    Lx = 2.5*(R_cell);   
+    Ly = 2*R_cell+2*start_point_offset;  
     
     Nx = ceil(Lx/dx);
     Ny = ceil(Ly/dy);
@@ -35,12 +36,17 @@ function pog(gap_size_um,force)
     y  = (0:Ny-1)*dy;
     [X,Y] = meshgrid(x,y);
 
-    %saving
-    gifFile = fullfile(getenv('HOME'), 'gifs', ...
-        sprintf('trans_gap%d_%d.gif', gap_size,v));
+    % %saving
+    % videoFile = fullfile(getenv('HOME'), 'videos', ...
+    % sprintf('trans_gap%d_%d.mp4', gap_size, v));
+
+    % vWriter = VideoWriter(videoFile, 'MPEG-4');
+    % vWriter.FrameRate = 10;  % or whatever frame rate you want
+    % open(vWriter);
+
     %% Cell init:
     %Where we starting at?
-    cy_cell = round(.22*Ny);
+    cy_cell = round((.5-start_point_offset/Ly)*Ny);
     cx_cell = round(.5*Nx);
     %soft cell:
     r= sqrt((X-x(cx_cell)).^2 + (Y-y(cy_cell)).^2);
@@ -72,6 +78,9 @@ function pog(gap_size_um,force)
     % X=gpuArray(X);
     % x=gpuArray(x);
     % y=gpuArray(y);
+    figure;
+    imagesc(both, [0 1]); axis equal tight;
+    colormap(spring); colorbar;
 %% ------------------ PDE functions ------------------ %%
     g= @(phi) phi.^3.*(10 + 3*phi.*(2*phi-5));
     g_prime = @(phi) phi.^3.*(6*phi+3*(-5+2*phi))+3*phi.^2.*(10+3*phi.*(-5+2*phi));
@@ -134,14 +143,6 @@ function pog(gap_size_um,force)
         velocities(step) =  y_coms_old + y_coms*dt;
 %% -- updating gif ----------------------------
         if mod(step, save_interval) == 0 || step == 2
-            % fprintf('step %d | max phi: %.2f | max lap_phi: %.2f | max gprime: %.2f | max F: %.2f\n', ...
-            % step, max(phi(:)), max(lap_phi(:)), max(g_prime_phi(:)), max(F(:)));
-            both = phi + psi;
-            %Plotting initial cell.
-            % subplot(1,3,1); imagesc(g_prime_phi); title("g'(\phi)");
-            % subplot(1,3,2); imagesc(mu); title("μ band");
-            % subplot(1,3,3); imagesc(mu .* g_prime_phi); title("μ × g'");
-
             fig = figure('Visible', 'off');
             tiledlayout(1,2, 'Padding', 'compact', 'TileSpacing', 'compact');
 
@@ -151,28 +152,21 @@ function pog(gap_size_um,force)
             colormap(spring); colorbar;
             contour(gather(psi), [0.5 0.5], 'k', 'LineWidth', 2);  % Black contour at phi = 0.5
             title('\phi (Cell Shape)');
+
+            %-- Velocity plot --
             nexttile;
             velocity_plot = plot(NaN, NaN, 'LineWidth', 2); 
             xlabel('Time (s)'); ylabel('Velocity (\mum/s)');
             xlim([0, step*dt]);
-            ylim([0, max(velocities)+1]);  % adjust this based on expected velocity range
+            ylim([0, max(velocities)+1]);
             grid on;
             hold on;
             set(velocity_plot, 'XData', time_array(2:step), 'YData', velocities(1:step-1));
-            drawnow limitrate;  % prevents lag by throttling redraw frequency 
 
-            % ► GIF: grab frame and append
-            drawnow;
-            frame = getframe(fig);
-            [im, map] = rgb2ind(frame.cdata, 256);
-
-                if step == 2                            % first time → create file
-                    imwrite(im, map, gifFile, 'gif', ...
-                        'LoopCount', inf, 'DelayTime', 0);  % DelayTime ~ seconds per frame
-                else                                    % later → append
-                    imwrite(im, map, gifFile, 'gif', ...
-                        'WriteMode', 'append', 'DelayTime', 0);
-                end
+            % %-- Write video frame --
+            % drawnow;
+            % frame = getframe(fig);
+            % writeVideo(vWriter, frame);
         end
     end
 end
