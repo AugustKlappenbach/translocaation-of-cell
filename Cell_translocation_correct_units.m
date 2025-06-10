@@ -78,30 +78,34 @@ function pog(gap_size_um,force)
     % X=gpuArray(X);
     % x=gpuArray(x);
     % y=gpuArray(y);
-    figure;
-    imagesc(both, [0 1]); axis equal tight;
-    colormap(spring); colorbar;
-%% ------------------ PDE functions ------------------ %%
+
+
+
+
+
+
+
+
+
+
+    %% ------------------ PDE functions ------------------ %%
     g= @(phi) phi.^3.*(10 + 3*phi.*(2*phi-5));
     g_prime = @(phi) phi.^3.*(6*phi+3*(-5+2*phi))+3*phi.^2.*(10+3*phi.*(-5+2*phi));
     f_prime = @(phi) 8*phi.*(1-phi).*(1-2*phi);
+    w = @(phi) 4*phi.*(1-phi); 
     %functions that will be used:
     %volumes=zeros(1, nSteps-1);
-    
-    % Cell volume weight
-    
-    phi_mask = phi > 0.5; % binary mask
-
     y_coms = sum(Y(phi_mask)) / sum(phi_mask(:));
     velocities = zeros(1, nSteps-1); % store velocity
     time_array = (0:nSteps-1) * dt;
 %% ------------------ getting repulsion force constant \lambda ------------------ %%
     lambda=-(15/4) * W * v;
+    
 %% ------------------- Main loop ------------------ %%
     % Loop over time steps
     for step = 1:nSteps
         % Inside time loop (at each step)
-        
+        w_phi = w(phi);
         g_prime_phi=g_prime(phi);
         % ---------- forces -------------
         lap_phi   = 4*del2(phi,dx,dy)/(dx*dy);
