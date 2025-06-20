@@ -162,7 +162,6 @@ function pog(gap_size_um,force)
             v    = -num / max(denom,eps);
         end
         v= (v + v0)/2; % average with previous velocity
-        F_advection = - v .* dphiy;                 % use the fresh v
         velocities(step) = gather(v/conv);          % store in μm/s if you like
         phi_mask = phi > 0.5; 
         y_coms = sum(Y(phi_mask)) / sum(phi_mask(:));

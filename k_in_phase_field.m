@@ -3,8 +3,8 @@ theme_of_plots = 'parula'; % 'hsv', 'parula', 'jet', 'gray'
 force=1;
 gap_size_um = 15; % [µm] gap size between pillars
     %saving
-    gifFile = fullfile(getenv('HOME'), 'gifs_for_RD', ...
-        sprintf('RD.gif'));
+    gifFile = fullfile(getenv('HOME'), 'video', ...
+    sprintf('R_D.gif'));
 
 %% ----------------  Paper PHYSICAL INPUT  ---------------- %%
 phys.W_nm       = 200;        % nm corresponding to PF‑unit 1
@@ -19,9 +19,9 @@ R_cell   = phys.Rcell_um * conv;   % 50 PF‑units
 gap_size = gap_size_um*conv;
 lambda=2;
 v=force;
-Df = .002*conv; % diffusion coefficient in PF units
-dt     = 1e-2; % time step in PF units
-nSteps = 20/dt;
+Df = .2*conv; % diffusion coefficient in PF units
+dt     = 1e-3/3; % time step in PF units
+nSteps = 10/dt;
 save_interval = 1;
 kon = .2;
 save_rate = 10; % save every 50 steps
@@ -84,111 +84,114 @@ grad_field=gradient_field(.2, .06, gap_size, x, X);
 %title('my field');
 
 %% ------------------ PDE functions ------------------ %%
-g = @(phi) ph`i.^3.*(10 + 3*phi.*(2*phi-5));
+g = @(phi) phi.^3.*(10 + 3*phi.*(2*phi-5));
 g_prime = @(phi) phi.^3.*(6*phi+3*(-5+2*phi))+3*phi.^2.*(10+3*phi.*(-5+2*phi));
 f_prime = @(phi) 8*phi.*(1-phi).*(1-2*phi);
-w = @(phi) (16*phi.^2.*(1-phi).^2); 
 
-[~, dphidy] = my_gradient(phi, dx, dy);
+[dphidx, dphidy] = my_gradient(phi, dx, dy);
 mask_front =  (dphidy <  0);
-front_of_cell = w(phi).*double(mask_front > 0);
 % un_binding_rate =front_of_cell .* my_field;
-unbinding_rates = 0.2 * w(phi) .* double(~mask_front)+0.2 * front_of_cell .* double(my_field == 0)+ my_field .* front_of_cell;
-binding_rate =.2*w(phi);
 k_off = .2;
 phi_mask = phi > 0.5;
 y_coms = sum(Y(phi_mask)) / sum(phi_mask(:));
-ubr=unbinding_rate(my_field, k_off, phi, dphidy, psi, w(phi), y_coms, y_center);
-% figure(911)
-% imagesc(unbinding_rates);
-% figure(912)
-% imagesc(ubr);
-% drawnow;
-count = 0;
-cf_w= .5.*w(phi);  % initial free concentration
-cb_w= .5.*w(phi);  % initial bound concentration
-cf = cf_w./(w(phi)+1e-6); % avoid division by zero
-cb = cb_w./(w(phi)+1e-6); % avoid division by zero
-total_c_b = zeros(1, round(nSteps));
-total_c_f = zeros(1, round(nSteps));
-t = zeros(1, round(nSteps));
-figure(1); clf;
+ubr=unbinding_rate(my_field, k_off, phi, dphidy, psi, y_coms, y_center);
+boundary_of_cell= dphidx.^2 + dphidy.^2;
+epsilon = 1./max(boundary_of_cell(:)); 
+w = epsilon*( dphidx.^2 + dphidy.^2);
+binding_rate = .2;
+cf_boundary= .5.*boundary_of_cell;  % initial free concentration
+cb_boundary= .5.*boundary_of_cell;  % initial bound concentration
+c_f = cf_boundary./(boundary_of_cell+1e-3); % avoid division by zero
+c_b = cb_boundary./(boundary_of_cell+1e-3); % avoid division by zero
+% Normal vector components
+nx = -dphidx ./ sqrt(dphidx.^2 + dphidy.^2 + 1e-6);
+ny = -dphidy ./ sqrt(dphidx.^2 + dphidy.^2 + 1e-6);
 
-        subplot(2,2,1);
-        imagesc(cf, [0, max(cf(:))]); colorbar;
+total_cbs = zeros(1, round(nSteps));
+total_cfs = zeros(1, round(nSteps));
+total_cs = zeros(1,round(nSteps));
+
+t = zeros(1, round(nSteps));
+fig = figure('Visible', 'on');
+        subplot(2,3,1);
+        imagesc(c_f, [0, max(c_f(:))]); colorbar;
         title(['c_b at t = ', num2str(0*dt, '%.2f'), ' s']);
-        subplot(2,2,2);
-        imagesc(cf, [0, max(cf(:))]); colorbar;
+        subplot(2,3,2);
+
+        imagesc(c_b, [0, max(c_b(:))]); colorbar;
         title(['c_f at t = ', num2str(0*dt, '%.2f'), ' s']);
 
-        subplot(2,2,3);
-        imagesc(w(phi) , [0 max(w(phi(:)))]); colorbar;
-        title('w(\phi)');
-
-        subplot(2,2,4);
-        imagesc(binding_rate , [0 max(binding_rate(:))]); colorbar;
-        title('binding rate');
-
-
-        % % Save to GIF
-        % frame = getframe(cf);
-        % im = frame2im(frame);
-        % [imind, cm] = rgb2ind(im, 256);
-        % imwrite(imind, cm, 'cf_cb_movie.gif', 'gif', 'Loopcount', inf, 'DelayTime', 0.1);
-
-
-%% ------------------ PDE functions ------------------ %%
-total_c_record = zeros(1, round(nSteps));
-for step = 1:nSteps
-    % Inside time loop (at each step)
-    wphi = w(phi);
-    g_prime_phi=g_prime(phi);
-    % ---------- forces -------------
-    lap_phi   = 4*del2(phi,dx,dy)/(dx*dy);
-    lap_psi   = 4*del2(psi,dx,dy)/(dx*dy);
-    unbinding_rate_on_edge = unbinding_rate(grad_field, k_off, phi, dphidy, psi, wphi, y_coms, y_center);
-    binding_rate_on_edge = k_off .* wphi; % binding rate on edge
-    [cf, cb] = update_RD(Df,phi, cf, cb, binding_rate_on_edge, unbinding_rate_on_edge, wphi, dx, dy, dt);
-    % ---------- precompute spatial stuff ----------
-    total_cf = sum(wphi(:) .* cf(:)) * dx * dy;
-    total_cb = sum(wphi(:) .* cb(:)) * dx * dy;
-    total_c  = total_cf + total_cb;
-    total_c_record(step) = total_c; % record total concentration
-
-    if mod(step, save_rate) == 0 
-        cfw=cf.*wphi; % weighted free concentration
-        cbw=cb.*wphi; % weighted bound concentration
-        figure(33);
-        idx = step / save_rate;
-        both = psi + phi; % combined field
-        % weight localised to the interface
-
-        subplot(2,2,1);
-        imagesc(cbw, [0, max(cfw(:))]); colorbar;
-        title(['c_b at t = ', num2str(step*dt, '%.2f'), ' s']);
-
-        subplot(2,2,2);
-        imagesc(cfw, [0, max(cfw(:))]); colorbar;
-        title(['c_f at t = ', num2str(step*dt, '%.2f'), ' s']);
-
-        subplot(2,2,3);
-        imagesc(unbinding_rate_on_edge , [0 max(unbinding_rate_on_edge(:))]); colorbar;
+        subplot(2,3,3);
+        imagesc(ubr , [0 max(ubr(:))]); colorbar;
         title('unbinding rate');
 
-        subplot(2,2,4);
-        imagesc(binding_rate , [0 max(binding_rate(:))]); colorbar;
+        subplot(2,3,4);
+        imagesc(ubr.*boundary_of_cell , [0 .2]); colorbar;
         title('binding rate');
+
+        subplot(2,3,5);
+        imagesc(.2.*boundary_of_cell , [0 .2]); colorbar;
+        title('boundary of cell'); 
+
+        subplot(2,3,6);
+        imagesc(boundary_of_cell , [0 max(boundary_of_cell(:))]); colorbar;
+        title('|\nabla \phi |^2');
+
+        % Save to GIF
+        frame = getframe(fig);
+        im = frame2im(frame);
+        [imind, cm] = rgb2ind(im, 256);
+        imwrite(imind, cm, 'cf_cb_movie.gif', 'gif', 'Loopcount', inf, 'DelayTime', 0.1);
+
+lap = @(u) my_laplacian(u, dx, dy);
+
+for step = 1:Nt
+    % Compute diffusion of free species
+    g_phi = epsilon*(dphidx.^2 + dphidy.^2);
+    diff_cf = Df * weighted_divergence(g_phi, c_f, dx, dy);
+    % Reaction terms
+    bind = binding_rate * g_phi .* c_f;
+    ubr=unbinding_rate(my_field, k_off, phi, dphidy, psi, y_coms, y_center);
+    unbind = ubr .* g_phi .* c_b;
+    
+    % Time update
+    gcf = g_phi .* c_f;
+    gcb = g_phi .* c_b;
+    
+    gcf_new = gcf + dt * (diff_cf - bind + unbind);
+    gcb_new = gcb + dt * (bind - unbind);
+
+    % Avoid divide-by-zero: enforce positivity of g_phi
+    g_phi_safe = g_phi + 1e-6;
+
+    % Solve for updated concentrations
+    c_f = gcf_new ./ g_phi_safe;
+    c_b = gcb_new ./ g_phi_safe;
+
+    % Track totals if needed
+    total_cfs(step)  = sum(c_f(:) .* g_phi(:))*dx*dx;
+    total_cbs(step) = sum(c_b(:) .* g_phi(:))*dx*dx;
+    total_cs(step) = total_cbs(step) + total_cfs(step);
+    t(step)         = step * dt;
+
+    % Visualization (every few steps)
+    if mod(step, save_rate) == 0
+        subplot(2,2,1); imagesc(c_f.*g_phi, [0, max(c_f(:))]); title(sprintf('c_f, t=%.2f', step*dt)); axis equal tight; colorbar;
+        subplot(2,2,2); imagesc(c_b.*g_phi, [0, max(c_b(:))]); title(sprintf('c_b, t=%.2f', step*dt)); axis equal tight; colorbar;
+        subplot(2,2,3); imagesc(ubr .* g_phi, [0, .2]);colorbar;
+        subplot(2,2,4); imagesc(.2.*g_phi, [0, .2]);colorbar;
         drawnow;
-
-        % % Save to GIF
-        % frame = getframe(gcf);
-        % im = frame2im(frame);
-        % [imind, cm] = rgb2ind(im, 256);
-        % imwrite(imind, cm, 'cf_cb_movie.gif', 'gif', 'WriteMode', 'append', 'DelayTime', 0.1);
-
     end
 end
-plot((1:Nt)*dt, total_c_record / total_c_record(1)); % Normalize to initial value
+
+%% ------------------ PDE functions ------------------ %%
+
+figure(33); clf;
+plot((1:Nt)*dt, total_cs/ total_cs(1)); % Normalize to initial value
+hold on;
+plot((1:Nt)*dt, total_cbs / total_cs(1));
+hold on;
+plot((1:Nt)*dt, total_cfs / total_cs(1));
 xlabel('Time'); ylabel('Total c / Initial c');
 title('Check for conservation');
 
@@ -209,49 +212,30 @@ function gradient_field = gradient_field(k_fast, k_slow, gap_size, x, X)
     my_field(right_mask) = k_slow + (X(right_mask) - x_center) / (gap_size/2) * (k_fast - k_slow);
     gradient_field = my_field; % Return the gradient field
 end
+function div = weighted_divergence(gphi, c, dx, dy)
+    % Compute ∇·(g ∇c) using finite differences
 
-function [cb, cf] = update_RD(Df,phi, cf, cb, binding_rate_on_edge, unbinding_rate_on_edge, wphi, dx, dy, dt)
-    lap_cf         = my_laplacian(cf, dx, dy);
-    div_term = weighted_diffusion(cf, wphi, dx, dy);
+    [Ny, Nx] = size(c);
+    div = zeros(Ny, Nx);
 
+    % X direction
+    gpx = (gphi(:, [2:Nx, Nx]) + gphi(:, 1:Nx)) / 2;
+    dcdx = (c(:, [2:Nx, Nx]) - c(:, [1, 1:Nx-1])) / dx;
+    flux_x = gpx .* dcdx;
+    dfluxdx = (flux_x(:, [2:Nx, Nx]) - flux_x(:, 1:Nx)) / dx;
 
-    % ---------- reactive terms ----------
-    react_cf = -binding_rate_on_edge .* cf + unbinding_rate_on_edge .* cb;
-    react_cb =  binding_rate_on_edge .* cf - unbinding_rate_on_edge .* cb;
+    % Y direction
+    gpy = (gphi([2:Ny, Ny], :) + gphi(1:Ny, :)) / 2;
+    dcdy = (c([2:Ny, Ny], :) - c([1, 1:Ny-1], :)) / dy;
+    flux_y = gpy .* dcdy;
+    dfluxdy = (flux_y([2:Ny, Ny], :) - flux_y(1:Ny, :)) / dy;
 
-    % ---------- evolve the *weighted* variables ----------
-    wc  = wphi .* cf;
-    wb  = wphi .* cb;
-
-    wc  = wc + dt * (Df * div_term  + react_cf);  % note: multiply by wphi
-    wb  = wb + dt * (               react_cb);
-
-    % ---------- recover plain concentrations (for plotting / reaction only) ----------
-    cf  = wc ./ max(wphi,1e-6);   % safer ε
-    cb  = wb ./ max(wphi,1e-6);
-
-    % ---------- clean-up outside cell ----------
-    cf(phi < 1e-3) = 0;
-    cb(phi < 1e-3) = 0;
-
-end
-function div_diff_cf = weighted_diffusion(cf, wphi, dx, dy)
-    % Get gradients of cf
-    [dcfdx, dcfdy] = gradient(cf, dx, dy);
-    
-    % Multiply gradients by the weight
-    jx = wphi .* dcfdx;
-    jy = wphi .* dcfdy;
-
-    % Divergence of the flux
-    [djxdx, ~] = gradient(jx, dx, dy);
-    [~, djydy] = gradient(jy, dx, dy);
-
-    % Total diffusion term
-    div_diff_cf = djxdx + djydy;
+    % Total divergence
+    div = dfluxdx + dfluxdy;
 end
 
-function unbinding_rate_on_edge = unbinding_rate(gradient_field, k_off, phi, dphidy, psi, w_phi, y_coms, y_center)
+
+function unbinding_rate_on_edge = unbinding_rate(gradient_field, k_off, phi, dphidy, psi, y_coms, y_center)
     % Calculate the unbinding rate based on the reaction kinetics
     % k_on: binding rate constant (int)
     % k_off: unbinding rate constant (int)
@@ -264,16 +248,13 @@ function unbinding_rate_on_edge = unbinding_rate(gradient_field, k_off, phi, dph
     % unbinding_rate_on_edge = k_off * w_phi;  % default unbinding rate
     % imagesc(gather(front_mask), [0 1]); axis image; axis off; hold on;
     % Ensure inputs are valid
-    if nargin < 8
-        error('Not enough input arguments.');
-    end
     if y_coms <= y_center || any(psi(:) .* phi(:) ~= 0)
-        front_of_cell = w_phi.*double(mask_front > 0);
+        front_of_cell = double(mask_front > 0);
         % figure(777);
         % imagesc(front_of_cell)
         drawnow;
         %0.2 * w(phi) .* double(~mask_front)+0.2 * front_of_cell .* double(my_field == 0)+ my_field .* front_of_cell;
-        unbinding_rate_on_edge = k_off * w_phi .* double(~mask_front) + k_off* front_of_cell .* double(gradient_field == 0)+ gradient_field .* front_of_cell;
+        unbinding_rate_on_edge = k_off * double(~mask_front) + k_off* front_of_cell .* double(gradient_field == 0)+ gradient_field .* front_of_cell;
     end
     % Calculate the unbinding rate
     end
